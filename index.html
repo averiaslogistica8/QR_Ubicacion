@@ -57,6 +57,11 @@
     font-size:14px; margin-bottom:4px;
   }
   .interno-banner b{font-size:18px; color:var(--navy);}
+  .veh-confirm{
+    background:#e8f7f0; border:1px solid #bfe9d6; border-radius:10px; padding:10px 12px;
+    font-size:13.5px; margin-bottom:10px; color:#146c4d;
+  }
+  .veh-confirm b{color:var(--navy);}
   .badge{
     display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px;
     background:#e9edf2; color:var(--muted); margin-left:6px; vertical-align:middle;
@@ -110,6 +115,7 @@
       Interno: <b id="internoView">—</b>
       <button class="link-btn" id="editInterno" style="float:right;">editar</button>
     </div>
+    <div class="veh-confirm hidden" id="vehConfirm"></div>
     <input type="text" id="internoInput" class="hidden" placeholder="Ej: 4521">
 
     <label for="sector">Sector</label>
@@ -200,10 +206,24 @@ function renderHist(){
     </div>`).join('');
 }
 
-// ---------- Extraer interno de texto QR ----------
-function extraerInterno(texto){
+// ---------- Extraer datos del QR ----------
+// El QR de los autos trae un JSON: {"Mar":"VOLKSWAGEN","NroInt":124489,"Modelo":"TERA",...}
+// Si no es JSON válido (u otro formato de QR), cae al modo texto plano de antes.
+function extraerDatosQR(texto){
+  try{
+    const obj = JSON.parse(texto);
+    if(obj && obj.NroInt){
+      return {
+        interno: String(obj.NroInt),
+        marca: obj.Mar || '',
+        modelo: obj.Modelo || '',
+        tipo: (obj.TipoVehiculo || '').trim()
+      };
+    }
+  } catch(e){ /* no era JSON, seguimos con el fallback */ }
+
   const soloDigitos = texto.trim().match(/\d{3,}/);
-  return soloDigitos ? soloDigitos[0] : texto.trim();
+  return { interno: soloDigitos ? soloDigitos[0] : texto.trim() };
 }
 
 // ---------- Scanner ----------
@@ -217,7 +237,8 @@ function iniciarCamara(){
     (decodedText) => {
       scannedRaw = decodedText;
       pararCamara();
-      abrirFormulario(extraerInterno(decodedText), 'QR');
+      const datos = extraerDatosQR(decodedText);
+      abrirFormulario(datos.interno, 'QR', datos);
     },
     () => {}
   ).catch(err => {
@@ -239,13 +260,21 @@ $('manualBtn').onclick = () => {
 };
 
 // ---------- Formulario ----------
-function abrirFormulario(interno, origen){
+function abrirFormulario(interno, origen, datosVeh){
   $('formCard').classList.remove('hidden');
   $('internoView').textContent = interno || '(sin definir)';
   $('internoInput').value = interno;
   $('sourceBadge').textContent = origen === 'QR' ? 'QR' : 'Manual';
   $('status').className = 'status';
   $('status').textContent = '';
+
+  const vc = $('vehConfirm');
+  if(datosVeh && (datosVeh.marca || datosVeh.modelo)){
+    vc.innerHTML = `✓ Auto detectado: <b>${datosVeh.marca}${datosVeh.modelo ? ' ' + datosVeh.modelo : ''}</b>${datosVeh.tipo ? ' · ' + datosVeh.tipo : ''}`;
+    vc.classList.remove('hidden');
+  } else {
+    vc.classList.add('hidden');
+  }
 }
 $('editInterno').onclick = () => {
   $('internoInput').classList.toggle('hidden');
