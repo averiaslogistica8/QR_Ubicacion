@@ -161,6 +161,7 @@
 const $ = id => document.getElementById(id);
 let html5QrCode = null;
 let scannedRaw = "";
+let datosVehActual = {};
 
 // ---------- Config ----------
 function getUrl(){ return localStorage.getItem('qr_script_url') || ''; }
@@ -269,6 +270,7 @@ function abrirFormulario(interno, origen, datosVeh){
   $('status').textContent = '';
 
   const vc = $('vehConfirm');
+  datosVehActual = datosVeh || {};
   if(datosVeh && (datosVeh.marca || datosVeh.modelo)){
     vc.innerHTML = `✓ Auto detectado: <b>${datosVeh.marca}${datosVeh.modelo ? ' ' + datosVeh.modelo : ''}</b>${datosVeh.tipo ? ' · ' + datosVeh.tipo : ''}`;
     vc.classList.remove('hidden');
@@ -299,6 +301,9 @@ $('submitBtn').onclick = async () => {
 
   const payload = {
     interno, sector, dique, fila, columna, notas,
+    marca: datosVehActual.marca || '',
+    modelo: datosVehActual.modelo || '',
+    tipo: datosVehActual.tipo || '',
     qr_raw: scannedRaw,
     timestamp: new Date().toISOString()
   };
