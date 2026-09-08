@@ -93,6 +93,8 @@
     <h2>Configuración</h2>
     <label for="scriptUrl">URL del Web App (Apps Script)</label>
     <input type="text" id="scriptUrl" placeholder="https://script.google.com/macros/s/AKfycb.../exec">
+    <label for="usuarioInput">Tu nombre / dispositivo</label>
+    <input type="text" id="usuarioInput" placeholder="Ej: Juan - Tablet Lavadero">
     <button class="btn btn-primary" id="saveCfg">Guardar</button>
     <p class="cfg-note">Se guarda solo en este teléfono. Lo pedís una vez.</p>
   </div>
@@ -166,13 +168,17 @@ let datosVehActual = {};
 // ---------- Config ----------
 function getUrl(){ return localStorage.getItem('qr_script_url') || ''; }
 function setUrl(u){ localStorage.setItem('qr_script_url', u); }
+function getUsuario(){ return localStorage.getItem('qr_usuario') || ''; }
+function setUsuario(u){ localStorage.setItem('qr_usuario', u); }
 
 function refreshCfgUI(){
   const url = getUrl();
-  if(url){
+  const usuario = getUsuario();
+  if(url && usuario){
     $('cfgCard').classList.add('hidden');
     $('startScan').classList.remove('hidden');
     $('scriptUrl').value = url;
+    $('usuarioInput').value = usuario;
   } else {
     $('cfgCard').classList.remove('hidden');
     $('startScan').classList.add('hidden');
@@ -180,8 +186,11 @@ function refreshCfgUI(){
 }
 $('saveCfg').onclick = () => {
   const v = $('scriptUrl').value.trim();
+  const u = $('usuarioInput').value.trim();
   if(!v){ alert('Pegá la URL del Web App primero.'); return; }
+  if(!u){ alert('Cargá tu nombre o el dispositivo.'); return; }
   setUrl(v);
+  setUsuario(u);
   refreshCfgUI();
 };
 
@@ -304,6 +313,7 @@ $('submitBtn').onclick = async () => {
     marca: datosVehActual.marca || '',
     modelo: datosVehActual.modelo || '',
     tipo: datosVehActual.tipo || '',
+    usuario: getUsuario(),
     qr_raw: scannedRaw,
     timestamp: new Date().toISOString()
   };
