@@ -38,17 +38,22 @@
   .card h2{font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin:0 0 10px;}
   #reader{width:100%; border-radius:10px; overflow:hidden; background:#000;}
   .btn{
-    display:block; width:100%; text-align:center; padding:13px 14px; border:none;
-    border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; margin-top:8px;
+    display:block; width:100%; text-align:center; padding:16px 14px; border:none;
+    border-radius:10px; font-size:17px; font-weight:700; cursor:pointer; margin-top:10px;
   }
   .btn-primary{background:var(--accent); color:#fff;}
-  .btn-outline{background:#fff; border:1px solid var(--border); color:var(--ink);}
+  .btn-outline{background:#fff; border:2px solid var(--navy); color:var(--navy);}
   .btn-ok{background:var(--ok); color:#fff;}
   .btn:disabled{opacity:.5;}
-  label{display:block; font-size:12px; font-weight:600; color:var(--muted); margin:10px 0 4px;}
+  label{display:block; font-size:13px; font-weight:700; color:var(--navy); margin:12px 0 5px;}
   input,select,textarea{
-    width:100%; padding:11px 12px; border-radius:9px; border:1px solid var(--border);
-    font-size:15px; background:#fbfcfd; color:var(--ink);
+    width:100%; padding:13px 12px; border-radius:9px; border:2px solid #a9b4c2;
+    font-size:17px; background:#fbfcfd; color:var(--ink);
+  }
+  select{font-weight:600;}
+  .pending-badge{
+    display:inline-block; font-size:12px; font-weight:700; padding:3px 9px; border-radius:20px;
+    background:#fff3cd; color:#8a6d1a; border:1px solid #f1dfa1; margin-left:6px;
   }
   .row{display:flex; gap:10px;}
   .row > div{flex:1;}
@@ -131,15 +136,19 @@
     <div class="row">
       <div>
         <label for="dique">Dique</label>
-        <input type="text" id="dique" placeholder="Ej: D3">
+        <select id="dique">
+          <option value="" disabled selected>—</option>
+        </select>
       </div>
       <div>
         <label for="fila">Fila</label>
-        <input type="text" id="fila" placeholder="Ej: 7">
+        <select id="fila">
+          <option value="" disabled selected>—</option>
+        </select>
       </div>
       <div>
         <label for="columna">Columna</label>
-        <input type="text" id="columna" placeholder="Ej: 2">
+        <input type="number" id="columna" inputmode="numeric" pattern="[0-9]*" min="0" max="41" placeholder="0-41">
       </div>
     </div>
 
@@ -153,7 +162,7 @@
 
   <!-- HISTORY -->
   <div class="card" id="histCard">
-    <h2>Últimas cargas (este teléfono)</h2>
+    <h2>Últimas cargas (este teléfono) <span class="pending-badge hidden" id="pendingBadge"></span></h2>
     <div id="histList"><p style="font-size:12.5px;color:var(--muted);margin:0;">Todavía no cargaste ninguna.</p></div>
   </div>
 
@@ -164,6 +173,30 @@ const $ = id => document.getElementById(id);
 let html5QrCode = null;
 let scannedRaw = "";
 let datosVehActual = {};
+
+// ---------- Diques y filas validas del predio ----------
+const DIQUES_VALIDOS = [2, 3, 4, 6];
+const FILAS_VALIDAS = "ABCDEFGHIJKLMNOPQRSTUV".split('');
+const COL_MIN = 0, COL_MAX = 41;
+
+function poblarSelectDique(){
+  const sel = $('dique');
+  DIQUES_VALIDOS.forEach(d => {
+    const opt = document.createElement('option');
+    opt.value = d; opt.textContent = 'Dique ' + d;
+    sel.appendChild(opt);
+  });
+}
+function poblarSelectFila(){
+  const sel = $('fila');
+  FILAS_VALIDAS.forEach(f => {
+    const opt = document.createElement('option');
+    opt.value = f; opt.textContent = f;
+    sel.appendChild(opt);
+  });
+}
+poblarSelectDique();
+poblarSelectFila();
 
 // ---------- Config ----------
 function getUrl(){ return localStorage.getItem('qr_script_url') || ''; }
@@ -277,6 +310,9 @@ function abrirFormulario(interno, origen, datosVeh){
   $('sourceBadge').textContent = origen === 'QR' ? 'QR' : 'Manual';
   $('status').className = 'status';
   $('status').textContent = '';
+  $('dique').value = '';
+  $('fila').value = '';
+  $('columna').value = '';
 
   const vc = $('vehConfirm');
   datosVehActual = datosVeh || {};
@@ -298,15 +334,61 @@ $('cancelBtn').onclick = () => {
   $('startScan').classList.remove('hidden');
 };
 
+// ---------- Cola offline: si falla el envio, se guarda y se reintenta solo ----------
+function getPendientes(){ return JSON.parse(localStorage.getItem('qr_pendientes') || '[]'); }
+function setPendientes(arr){ localStorage.setItem('qr_pendientes', JSON.stringify(arr)); renderPendingBadge(); }
+function encolarPendiente(payload){
+  const p = getPendientes();
+  p.push(payload);
+  setPendientes(p);
+}
+function renderPendingBadge(){
+  const n = getPendientes().length;
+  const badge = $('pendingBadge');
+  if(n > 0){
+    badge.textContent = n + ' pendiente' + (n > 1 ? 's' : '') + ' sin enviar';
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+async function enviarPayload(payload){
+  // mode no-cors: no se puede leer la respuesta, pero si no hay red esto tira excepcion
+  await fetch(getUrl(), {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  });
+}
+async function flushPendientes(){
+  if(!getUrl()) return;
+  let p = getPendientes();
+  if(p.length === 0) return;
+  const restantes = [];
+  for(const item of p){
+    try{ await enviarPayload(item); }
+    catch(e){ restantes.push(item); }
+  }
+  setPendientes(restantes);
+}
+window.addEventListener('online', flushPendientes);
+
 $('submitBtn').onclick = async () => {
   const interno = $('internoInput').value.trim();
   const sector = $('sector').value;
   const dique = $('dique').value.trim();
-  const fila = $('fila').value.trim();
-  const columna = $('columna').value.trim();
+  const fila = $('fila').value;
+  const columna = $('columna').value;
   const notas = $('notas').value.trim();
 
   if(!interno){ alert('Falta el interno.'); return; }
+  if(!dique){ alert('Elegí el dique.'); return; }
+  if(!fila){ alert('Elegí la fila.'); return; }
+  if(columna === '' || isNaN(Number(columna)) || Number(columna) < COL_MIN || Number(columna) > COL_MAX){
+    alert('La columna tiene que ser un número entre ' + COL_MIN + ' y ' + COL_MAX + '.');
+    return;
+  }
 
   const payload = {
     interno, sector, dique, fila, columna, notas,
@@ -323,34 +405,36 @@ $('submitBtn').onclick = async () => {
   $('submitBtn').disabled = true;
 
   try{
-    await fetch(getUrl(), {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
+    await enviarPayload(payload);
+    await flushPendientes();
     $('status').className = 'status ok';
     $('status').textContent = '✓ Guardado';
     pushHist({
       interno, sector, dique, fila, columna,
       time: new Date().toLocaleTimeString('es-AR', {hour:'2-digit',minute:'2-digit'})
     });
-    setTimeout(() => {
-      $('formCard').classList.add('hidden');
-      $('startScan').classList.remove('hidden');
-      $('dique').value=''; $('fila').value=''; $('columna').value=''; $('notas').value='';
-      $('submitBtn').disabled = false;
-    }, 900);
   } catch(err){
-    $('status').className = 'status err';
-    $('status').textContent = 'Error de red. Revisá conexión y probá de nuevo.';
-    $('submitBtn').disabled = false;
+    encolarPendiente(payload);
+    $('status').className = 'status pending';
+    $('status').textContent = '📴 Sin señal — se guardó en el teléfono y se va a enviar solo cuando vuelva la conexión.';
+    pushHist({
+      interno, sector, dique, fila, columna,
+      time: new Date().toLocaleTimeString('es-AR', {hour:'2-digit',minute:'2-digit'}) + ' (pendiente)'
+    });
     console.error(err);
   }
+  setTimeout(() => {
+    $('formCard').classList.add('hidden');
+    $('startScan').classList.remove('hidden');
+    $('dique').value=''; $('fila').value=''; $('columna').value=''; $('notas').value='';
+    $('submitBtn').disabled = false;
+  }, 1200);
 };
 
 refreshCfgUI();
 renderHist();
+renderPendingBadge();
+flushPendientes();
 </script>
 </body>
 </html>
